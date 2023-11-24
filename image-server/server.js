@@ -20,19 +20,18 @@ var opts = {
 // Creates webcam instance
 const Webcam = NodeWebcam.create(opts);
 
+const absolutePathJpeg = path.join(__dirname, "image.jpg");
+const absolutePathBmp = path.join(__dirname, "image.bmp");
+
 // Endpoint to capture and send an image
 app.get('/capture', (req, res) => {
   console.log("got request");
-  Webcam.capture("webcam_image", function(err, data) {
+  Webcam.capture(absolutePathJpeg, function(err, data) {
     if (err) {
       console.error(err);
       res.status(500).send('Error capturing image');
       return;
     }
-
-    // Convert the relative path to an absolute path
-    const absolutePathJpeg = path.join(__dirname, data);
-    const absolutePathBmp = path.join(__dirname, "new-image.bmp");
 
     Jimp.read(absolutePathJpeg, function(err, image) {
       if (err) {
