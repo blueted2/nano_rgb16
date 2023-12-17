@@ -1,9 +1,0 @@
-#!/bin/bash
-
-if arduino-cli compile; then
-	echo "Done compiling."
-	pkill -f "arduino-cli monitor"
-	arduino-cli upload
-fi
-
-
