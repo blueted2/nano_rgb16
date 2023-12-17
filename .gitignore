@@ -54,3 +54,4 @@ dkms.conf
 
 node_modules
 .ignore
+c_cpp_properties.json
