@@ -2,68 +2,20 @@
 #include <SPI.h>
 #include <Wire.h>
 
-#include <HttpClient.h>
 #include <WiFiNINA.h>
+
+#include "rgb_utils.h"
 
 #define IMG_WIDTH 120
 #define IMG_HEIGHT 100
 
 #define CS 10
-
-uint8_t buf1[IMG_WIDTH * IMG_HEIGHT];
-uint8_t buf2[IMG_WIDTH * IMG_HEIGHT];
-
-uint8_t *curr_buf = buf1;
-uint8_t *prev_buf = buf2;
-
 ArduCAM myCAM(OV2640, CS);
 
-struct rgb565_t
-{
-  uint16_t data;
+rgb565_t img_buffer[IMG_WIDTH * IMG_HEIGHT];
 
-  uint8_t get_r() { return (data >> 11) & 0b11111; }
-  uint8_t get_g() { return (data >> 5) & 0b111111; }
-  uint8_t get_b() { return (data) & 0b11111; }
-};
-
-struct rgb332_t
-{
-  uint8_t data;
-
-  uint8_t get_r() { return (data >> 5) & 0b111; }
-  uint8_t get_g() { return (data >> 2) & 0b111; }
-  uint8_t get_b() { return (data) & 0b11; }
-
-  static rgb332_t from_rgb565(rgb565_t pixel)
-  {
-    uint8_t r = pixel.get_r() >> 2;
-    uint8_t g = pixel.get_g() >> 3;
-    uint8_t b = pixel.get_b() >> 3;
-
-    return rgb332_t{(r << 5) | (g << 2) | b};
-  }
-
-  static rgb332_t from_rgb888(uint8_t r, uint8_t g, uint8_t b)
-  {
-    r = r >> 5;
-    g = g >> 5;
-    b = b >> 6;
-
-    return rgb332_t{(r << 5) | (g << 2) | b};
-  }
-
-  static uint8_t sq_dist(rgb332_t left, rgb332_t right)
-  {
-    uint8_t r_diff = abs((left.get_r() - right.get_r()));
-    uint8_t g_diff = abs((left.get_g() - right.get_g()));
-
-    // make sure all three channels occupy the same number of bits (3)
-    uint8_t b_diff = abs((left.get_b() - right.get_b())) * 2;
-
-    return r_diff * r_diff + g_diff + g_diff + b_diff * b_diff;
-  }
-};
+#define SERVER "192.168.204.206"
+#define PORT 3002
 
 void setup()
 {
@@ -123,8 +75,12 @@ void setup()
     }
   }
 
-  set_bmp();
+  // set_bmp();
+
+  set_jpeg();
 }
+
+uint32_t last_change_to_bmp = 0;
 
 void set_bmp()
 {
@@ -134,6 +90,8 @@ void set_bmp()
   myCAM.wrSensorReg8_8(0xff, 0x00);
   myCAM.wrSensorReg8_8(0x5a, IMG_WIDTH / 4);
   myCAM.wrSensorReg8_8(0x5b, IMG_HEIGHT / 4);
+
+  last_change_to_bmp = millis();
 }
 
 void set_jpeg()
@@ -142,123 +100,140 @@ void set_jpeg()
   myCAM.InitCAM();
 
   myCAM.OV2640_set_JPEG_size(OV2640_640x480);
-  delay(1000);
+  // delay(1000);
+}
+
+void update_wifi()
+{
+  if (WiFi.status() == WL_CONNECTED)
+    return;
+
+  Serial.print("connecting to wifi");
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.begin("Pixel_6148", "12345678");
+    delay(100);
+    Serial.print(".");
+  }
+
+  Serial.println("connected!");
 }
 
 void loop()
 {
 
+  while (!Serial.available())
+  {
+    delay(100);
+  }
+
+  while (Serial.available())
+  {
+    Serial.read();
+  }
+
+  capture_jpeg();
+  // delay(1000);
+  return;
+
+  // return;
   uint32_t width = IMG_WIDTH;
   uint32_t height = IMG_HEIGHT;
 
-  capture_bmp((rgb332_t *)curr_buf);
+  capture_bmp(img_buffer);
 
-  int status = WiFi.status();
+  // uint32_t delta = 0;
+  // for (int j = 0; j < height; j++)
+  // {
+  //   for (int i = 0; i < width; i++)
+  //   {
+  //     rgb332_t pix = rgb332_t{y};
+  //     // rgb332_t old_pix = rgb332_t{old_y};
 
-  while (status != WL_CONNECTED)
-  {
-    WiFi.begin("Votre Box Mobile", "Grenier.c.16");
-    status = WiFi.status();
-    Serial.println("connecting to wifi");
-  }
+  //     // uint8_t y_dist_sq = (y - old_y) * (y - old_y) / 256;
 
-  uint32_t delta = 0;
-  for (int j = 0; j < height; j++)
-  {
-    for (int i = 0; i < width; i++)
-    {
-      uint8_t y = curr_buf[j * width + i];
-      uint8_t old_y = prev_buf[j * width + i];
+  //     uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
 
-      rgb332_t pix = rgb332_t{y};
-      rgb332_t old_pix = rgb332_t{old_y};
+  //     // max value of sq_dist for rgb332 is 147 (3 * 7^2)
+  //     y_dist_sq = (float(y_dist_sq) / 147 * 256);
 
-      // uint8_t y_dist_sq = (y - old_y) * (y - old_y) / 256;
+  //     delta += y_dist_sq;
+  //   }
+  // }
 
-      uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
+  // Serial.println(delta);
 
-      // max value of sq_dist for rgb332 is 147 (3 * 7^2)
-      y_dist_sq = (float(y_dist_sq) / 147 * 256);
+  // uint16_t now = millis();
 
-      delta += y_dist_sq;
-    }
-  }
+  // if (delta > 50000 && now - last_change_to_bmp > 2000)
+  // {
+  //   Serial.println("---MOUVEMENT---");
+  //   set_jpeg();
+  //   // delay(1000);
 
-  Serial.println(delta);
+  //   capture_jpeg();
+  //   set_bmp();
+  //   // delay(1000);
+  // }
 
-  if (delta > 50000)
-  {
-    Serial.println("---MOUVEMENT---");
-    set_jpeg();
-    delay(1000);
-
-    capture_jpeg();
-    set_bmp();
-    delay(1000);
-  }
-
-  // draw_images();
-
-  // swap buffers
-  uint8_t *tmp = curr_buf;
-  curr_buf = prev_buf;
-  prev_buf = tmp;
+  draw_images();
 }
 
 void draw_images()
 {
   uint32_t width = IMG_WIDTH;
   uint32_t height = IMG_HEIGHT;
-  for (int j = 0; j < height; j += 2)
+  for (int y = 0; y < height; y += 2)
   {
-    for (int i = 0; i < width; i++)
+    for (int x = 0; x < width; x++)
     {
-      uint8_t old_y = prev_buf[j * width + i];
-      rgb332_t pix = rgb332_t{old_y};
+      rgb565_t top = img_buffer[x + y * width];
+      rgb565_t bottom = img_buffer[x + (y + 1) * width];
 
-      Serial.print(set_serial_color(pix.get_r() << 5, pix.get_g() << 5,
-                                    pix.get_b() << 6));
-      Serial.print(" ");
+      print_two_pixels(top, bottom);
     }
+    // {
+    //   rgb565_t pix = img_buffer[j * width + i];
 
-    for (int i = 0; i < width; i++)
-    {
-      uint8_t y = curr_buf[j * width + i];
+    //   Serial.print(print_two_pixels(pix.get_r() << 5, pix.get_g() << 5,
+    //                                 pix.get_b() << 6));
+    //   Serial.print(" ");
+    // }
 
-      rgb332_t pix = rgb332_t{y};
-      Serial.print(set_serial_color(pix.get_r() << 5, pix.get_g() << 5,
-                                    pix.get_b() << 6));
-      Serial.print(" ");
-    }
+    // for (int i = 0; i < width; i++)
+    // {
+    //   uint8_t y = img_buffer[j * width + i];
 
-    for (int i = 0; i < width; i++)
-    {
-      uint8_t y = curr_buf[j * width + i];
-      uint8_t old_y = prev_buf[j * width + i];
+    //   rgb565_t pix = rgb332_t{y};
+    //   Serial.print(set_serial_color(pix.get_r_norm(), pix.get_g_norm(),
+    //                                 pix.get_b_norm()));
+    //   Serial.print(" ");
+    // }
 
-      rgb332_t pix = rgb332_t{y};
-      rgb332_t old_pix = rgb332_t{old_y};
+    // for (int i = 0; i < width; i++)
+    // {
+    //   uint8_t y = curr_buf[j * width + i];
+    //   uint8_t old_y = prev_buf[j * width + i];
 
-      // uint8_t y_dist_sq = (y - old_y) * (y - old_y) / 256;
+    //   rgb332_t pix = rgb332_t{y};
+    //   rgb332_t old_pix = rgb332_t{old_y};
 
-      uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
+    //   // uint8_t y_dist_sq = (y - old_y) * (y - old_y) / 256;
 
-      // max value of sq_dist for rgb332 is 147 (3 * 7^2)
-      y_dist_sq = (float(y_dist_sq) / 147 * 256);
+    //   uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
 
-      if (y_dist_sq > 200)
-      {
-        Serial.println(y_dist_sq);
-      }
-      Serial.print(set_serial_color(y_dist_sq, y_dist_sq, y_dist_sq));
-      Serial.print(" ");
-    }
+    //   // max value of sq_dist for rgb332 is 147 (3 * 7^2)
+    //   y_dist_sq = (float(y_dist_sq) / 147 * 256);
+
+    //   if (y_dist_sq > 200)
+    //   {
+    //     Serial.println(y_dist_sq);
+    //   }
+    //   Serial.print(set_serial_color(y_dist_sq, y_dist_sq, y_dist_sq));
+    //   Serial.print(" ");
+    // }
     Serial.println();
   }
-}
-String set_serial_color(uint8_t r, uint8_t g, uint8_t b)
-{
-  return "\033[48;2;" + String(r) + ";" + String(g) + ";" + String(b) + "m";
 }
 
 // TODO: double for loop could be replace with single
@@ -299,18 +274,20 @@ void read_888_as_332(Stream &stream, rgb332_t *buf)
   }
 }
 
-void capture_bmp(rgb332_t *buf)
+void capture_bmp(rgb565_t *buf)
 {
 
   myCAM.flush_fifo();
   myCAM.clear_fifo_flag();
+
   // Start capture
   myCAM.start_capture();
+  delay(0);
 
   while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK))
   {
     // Serial.println("waiting for capture");
-    delay(100);
+    delay(0);
   }
 
   uint32_t length = myCAM.read_fifo_length();
@@ -320,21 +297,17 @@ void capture_bmp(rgb332_t *buf)
   myCAM.CS_LOW();
   myCAM.set_fifo_burst(); // Set fifo burst mode
 
-  for (int line = 0; line < IMG_HEIGHT; line++)
+  for (int y = 0; y < IMG_HEIGHT; y++)
   {
     for (int x = 0; x < IMG_WIDTH; x++)
     {
       uint16_t tmp = SPI.transfer(0x00) << 8;
 
-      // tmp |= SPI.transfer(0x00) << 8;
       tmp |= SPI.transfer(0x00);
+      // tmp |= SPI.transfer(0x00);
 
       rgb565_t pixel565 = rgb565_t{tmp};
-
-      rgb332_t pixel332 = rgb332_t::from_rgb565(pixel565);
-
-      *buf = pixel332;
-      buf++;
+      img_buffer[x + y * IMG_WIDTH] = pixel565;
     }
   }
 
@@ -350,83 +323,132 @@ void capture_jpeg()
   // Start capture
   myCAM.start_capture();
 
-  int status = WiFi.status();
+  // Serial.print("starting capture");
 
-  while (status != WL_CONNECTED)
-  {
-    WiFi.begin("Votre Box Mobile", "Grenier.c.16");
-    status = WiFi.status();
-    Serial.println("connecting to wifi");
-  }
+  // int status = WiFi.status();
 
-  WiFiClient client;
+  // while (status != WL_CONNECTED)
+  // {
+  //   WiFi.begin("Votre Box Mobile", "Grenier.c.16");
+  //   status = WiFi.status();
+  //   Serial.println("connecting to wifi");
+  // }
+
+  update_wifi();
 
   // HttpClient http(client);
 
   while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK))
   {
-    // Serial.println("waiting for capture");
+    Serial.println("waiting for capture");
     delay(100);
   }
 
-  if (client.connect("192.168.50.206", 3001))
-  {
-    client.println("POST / HTTP/1.1");
-    client.println("Host: 192.168.50.206");
-    client.println("User-Agent: Arduino/1.0");
-    client.println("Connection: close");
-    client.print("Content-Length: ");
-    client.println(11);
-    client.println();
-    client.println("1234567890");
-    client.println();
-    client.println();
-  }
+  update_wifi();
 
-  // http.startRequest("192.168.50.206", 3001, "/", HTTP_METHOD_POST, NULL);
-
-  // http.sendHeader("type", "alskdjfhasdf");
-
-  // http.finishRequest();
-
-  // if(http.post("192.168.50.206", 3001, "/")) {
-  // http.sendHeader("type", "alskdjfhasdf");
-
-  // }
+  // Serial.println("capture done");
 
   uint32_t length = myCAM.read_fifo_length();
 
-  // Serial.println(length);
+  Serial.println(length);
 
   myCAM.CS_LOW();
   myCAM.set_fifo_burst(); // Set fifo burst mode
 
-  while (length > 0)
-  {
-    uint16_t tmp = SPI.transfer(0x00) << 8;
-    Serial.print(tmp);
-    length--;
-  }
+  WiFiClient client;
 
-  myCAM.CS_HIGH();
-  myCAM.clear_fifo_flag();
-}
+  int total_sent = 0;
 
-void write(WiFiClient client, byte *buffer, int size)
-{
-  const int PACKET_SIZE = 1000;
-  for (int i = 0; i <= size / PACKET_SIZE; ++i)
+  if (client.connect(SERVER, PORT))
   {
-    byte *p = buffer + PACKET_SIZE * i;
-    int l = PACKET_SIZE * (i + 1) > size ? size - PACKET_SIZE * i : PACKET_SIZE;
-    int bytesWritten = 0;
-    do
+    client.println("POST / HTTP/1.1");
+    client.print("Host: ");
+    client.println(SERVER);
+    client.println("User-Agent: Arduino/1.0");
+    client.println("Connection: close");
+    client.println("Content-Type: image/jpeg");
+    client.print("Content-Length: ");
+    client.println(length);
+    client.println();
+
+    const int BUF_SIZE = 1024;
+
+    uint8_t buf[BUF_SIZE];
+    int buf_size = 0;
+
+    update_wifi();
+    while (length > 0)
     {
-      bytesWritten += client.write(p + bytesWritten,
-                                   l - bytesWritten);
-    } while (bytesWritten < l);
+
+      buf[buf_size] = SPI.transfer(0x00);
+      buf_size++;
+      length--;
+
+      // if this is the last byte
+      if (buf_size == BUF_SIZE)
+      {
+        int written = client.write(buf, buf_size);
+        delay(20);
+        Serial.println(written);
+        total_sent += buf_size;
+        buf_size = 0;
+        Serial.print(".");
+      }
+
+      // if (length % 100 == 0) {
+      //   Serial.println(length);
+      // }
+      
+    }
+    if (buf_size > 0)
+    {
+      client.write(buf, buf_size);
+    }
+    client.println();
+
+    total_sent += buf_size;
+
+    Serial.println();
+    Serial.println(total_sent);
+
+    myCAM.CS_HIGH();
+    myCAM.clear_fifo_flag();
   }
+  client.flush();
+  client.stop();
 }
+
+// void write(WiFiClient client, byte *buffer, int size)
+// {
+//   const int PACKET_SIZE = 1000;
+//   for (int i = 0; i <= size / PACKET_SIZE; ++i)
+//   {
+//     byte *p = buffer + PACKET_SIZE * i;
+//     int l = PACKET_SIZE * (i + 1) > size ? size - PACKET_SIZE * i : PACKET_SIZE;
+//     int bytesWritten = 0;
+//     do
+//     {
+//       bytesWritten += client.write(p + bytesWritten,
+//                                    l - bytesWritten);
+//     } while (bytesWritten < l);
+//   }
+// }
+
+// void jpeg_upload(uint8_t *buffer, uint16_t buffer_len) {
+//     if (client.connect(SERVER, PORT))
+//     {
+//         client.println("POST / HTTP/1.1");
+//         client.print("Host: "); client.println(SERVER);
+//         client.println("User-Agent: Arduino/1.0");
+//         client.println("Connection: close");
+//         client.println("Content-Type: image/jpeg");
+//         client.print("Content-Length: ");
+//         client.println(buffer_len);
+//         client.println();
+//         client.write(buffer, buffer_len);
+//         client.println();
+//     }
+// }
 
 // uint8_t read_fifo_burst(ArduCAM myCAM)
 // {
