@@ -3,8 +3,12 @@
 
 import smtplib
 import datetime
+from pathlib import Path
 from email.mime.text import MIMEText
 from twilio.rest import Client
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
 
 """
@@ -21,7 +25,7 @@ ex : prep_message("Clémence", 1, recipients)
 """
 
 
-def send_email(subject, body, sender, recipients, password):
+def send_email(subject, body, sender, recipients, password, image):
     """
     Envoie un mail à la liste de destinaires dans recipients, dupuis le mail sender
     subject = sujet du mail
@@ -30,10 +34,23 @@ def send_email(subject, body, sender, recipients, password):
     recipients = Liste des destinataires (format liste même pour une personne)
     password = mot de passe d'application (API key) du compte gmail envoyeur
     """
-    msg = MIMEText(body)            #écriture du message
+    msg = MIMEMultipart()
     msg['Subject'] = subject
     msg['From'] = sender
     msg['To'] = ', '.join(recipients)
+
+    msg.attach(MIMEText(body))
+
+
+    part = MIMEBase('application', "octet-stream")
+    with open("image.png", 'rb') as file:
+        part.set_payload(file.read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition',
+                    'attachment; filename={}'.format(Path("image.png").name))
+    msg.attach(part)
+
+
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp_server:
        smtp_server.login(sender, password)                          #login au compte google
        smtp_server.sendmail(sender, recipients, msg.as_string())    #envoie du mail
@@ -51,7 +68,7 @@ def send_sms(body):
     print(message.sid)
 
 
-def write_message(recipients, date, heure, individue, zone) : 
+def write_message(recipients, date, heure, individue, zone, image) : 
     """
     Prépare le mail avant l'envoit 
     date et heure = date et heure (format str)   
@@ -59,6 +76,7 @@ def write_message(recipients, date, heure, individue, zone) :
     individue = nom de la personne reconnue, individue = inconnue si la personne n'est pas identifié
     zone = zone de la transgression (int ou str ?)
     """
+
     subject = "Security mail from camera"
     sender = "grenierclemence16@gmail.com"
     password = "genw wdup ehth fmgk"
@@ -79,9 +97,12 @@ Veuillez prendre les mesures nécessaire.
     # --- Paramétrage des zones ---
 
     if zone == 3:
-        send_sms(body)
+        #send_sms(body)
+        print("send sms")
     elif zone == 2 :
-        send_email(subject, body, sender, recipients, password)
+        send_email(subject, body, sender, recipients, password, image)
+        print("send mail")
+
     elif zone == 1 :
         print("tout va bien")
 
@@ -110,14 +131,13 @@ def padding(liste:str, number_to_add:int, char_to_add="0", place_before=True, co
 # send_mail(recipients, date, heure, individue, zone)
 
 
-def prep_message(individue, zone, recipients): 
+def prep_message(individue, zone, recipients, image): 
     """
     récupère l'heure et la date actuelle
     individue = str indiquant la personne en transgression  
     zone = numéro de la zone de la transgression 
     recipients = Liste des destinataires (format liste même pour une personne)
     """
-
     now = datetime.datetime.now()
     # date = now.date()
     # heure = now.time()
@@ -130,7 +150,7 @@ def prep_message(individue, zone, recipients):
     date = f"{now.day}/{now.month}/{now.year}" #écriture de la date        
     heure = f"{hour}:{minute}:{second}"          #écriture de l'heure
 
-    write_message(recipients, date, heure, individue, zone)
+    write_message(recipients, date, heure, individue, zone, image)
 
     
 
@@ -138,9 +158,9 @@ def prep_message(individue, zone, recipients):
 
 
 #---------main------------
-
-recipients = ["grenierclemence16@gmail.com" ] # Liste des recepteurs du mail
-prep_message("Clémence", 1, recipients)
+if __name__ == '__main__':
+    recipients = ["grenierclemence16@gmail.com" ] # Liste des recepteurs du mail
+    prep_message("Clémence", 1, recipients)
 
 
 
