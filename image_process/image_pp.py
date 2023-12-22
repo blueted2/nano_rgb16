@@ -6,7 +6,6 @@ import cv2 as cv
 recipients = ["grenierclemence16@gmail.com" ] # Liste des recepteurs du mail
 
 
-image = cv.imread("640x320_clem.jpeg")
 
 
 def image_process(image):

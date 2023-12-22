@@ -10,6 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
+API_TOKEN = 'token' #TODO  
 
 """
 Liste de fonction :
@@ -25,7 +26,7 @@ ex : prep_message("Clémence", 1, recipients)
 """
 
 
-def send_email(subject, body, sender, recipients, password, image):
+def send_email(subject, body, sender, recipients, password, image:bool=False):
     """
     Envoie un mail à la liste de destinaires dans recipients, dupuis le mail sender
     subject = sujet du mail
@@ -41,14 +42,14 @@ def send_email(subject, body, sender, recipients, password, image):
 
     msg.attach(MIMEText(body))
 
-
-    part = MIMEBase('application', "octet-stream")
-    with open("image.png", 'rb') as file:
-        part.set_payload(file.read())
-    encoders.encode_base64(part)
-    part.add_header('Content-Disposition',
-                    'attachment; filename={}'.format(Path("image.png").name))
-    msg.attach(part)
+    if image : 
+        part = MIMEBase('application', "octet-stream")
+        with open("image.jpeg", 'rb') as file:
+            part.set_payload(file.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition',
+                        'attachment; filename={}'.format(Path("image.jpeg").name))
+        msg.attach(part)
 
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp_server:
@@ -60,7 +61,7 @@ def send_email(subject, body, sender, recipients, password, image):
 
 def send_sms(body):
     account_sid = 'ACa8e4bedc1d56fa5d97f32746adf7b600'
-    auth_token = '0c432e023fdac9711894a391378b3eb2'
+    auth_token = API_TOKEN
     client = Client(account_sid, auth_token)
 
     message = client.messages.create( from_='+12057821255', body=body, to='+33782848768')
@@ -68,7 +69,7 @@ def send_sms(body):
     print(message.sid)
 
 
-def write_message(recipients, date, heure, individue, zone, image) : 
+def write_message(recipients, date, heure, individue, zone) : 
     """
     Prépare le mail avant l'envoit 
     date et heure = date et heure (format str)   
@@ -97,12 +98,11 @@ Veuillez prendre les mesures nécessaire.
     # --- Paramétrage des zones ---
 
     if zone == 3:
-        #send_sms(body)
+        send_sms(body)
         print("send sms")
     elif zone == 2 :
-        send_email(subject, body, sender, recipients, password, image)
+        send_email(subject, body, sender, recipients, password, image=True)
         print("send mail")
-
     elif zone == 1 :
         print("tout va bien")
 
@@ -131,7 +131,7 @@ def padding(liste:str, number_to_add:int, char_to_add="0", place_before=True, co
 # send_mail(recipients, date, heure, individue, zone)
 
 
-def prep_message(individue, zone, recipients, image): 
+def prep_message(individue, zone, recipients): 
     """
     récupère l'heure et la date actuelle
     individue = str indiquant la personne en transgression  
@@ -150,18 +150,40 @@ def prep_message(individue, zone, recipients, image):
     date = f"{now.day}/{now.month}/{now.year}" #écriture de la date        
     heure = f"{hour}:{minute}:{second}"          #écriture de l'heure
 
-    write_message(recipients, date, heure, individue, zone, image)
+    write_message(recipients, date, heure, individue, zone)
 
     
+def alert_acc(recipients):
+
+    now = datetime.datetime.now()
+    taille = 2
+    hour = padding(str(now.hour), max(taille-len(str(now.hour)), 0), place_before=False)
+    minute = padding(str(now.minute), max(taille-len(str(now.minute)), 0), place_before=False)
+    second = padding(str(now.second), max(taille-len(str(now.second)), 0), place_before=False)
 
 
+    date = f"{now.day}/{now.month}/{now.year}" #écriture de la date        
+    heure = f"{hour}:{minute}:{second}"          #écriture de l'heure
+
+    subject = "Security mail from camera"
+    sender = "grenierclemence16@gmail.com"
+    password = "genw wdup ehth fmgk"
+
+    body = f"""Bonjour,
+
+La caméra à subie un mouvement important le {date} à {heure}.
+L'intégrité du système est compromise. 
+
+Veuillez prendre les mesures nécessaire.
+    """
+    send_email(subject, body, sender, recipients, password)
 
 
 #---------main------------
 if __name__ == '__main__':
     recipients = ["grenierclemence16@gmail.com" ] # Liste des recepteurs du mail
     prep_message("Clémence", 1, recipients)
-
+    alert_acc(recipients)
 
 
 
