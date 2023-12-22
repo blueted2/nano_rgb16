@@ -10,6 +10,15 @@ struct rgb565_t
   uint8_t get_r_norm() { return (data >> 8) & 0b11111000; }
   uint8_t get_g_norm() { return (data >> 3) & 0b11111100; }
   uint8_t get_b_norm() { return (data << 3) & 0b11111000; }
+
+  static uint32_t sq_dist(rgb565_t left, rgb565_t right)
+  {
+    uint8_t r_diff = abs((left.get_r_norm() - right.get_r_norm())) / 4;
+    uint8_t g_diff = abs((left.get_g_norm() - right.get_g_norm())) / 4;
+    uint8_t b_diff = abs((left.get_b_norm() - right.get_b_norm())) / 4;
+
+    return r_diff * r_diff + g_diff + g_diff + b_diff * b_diff;
+  }
 };
 
 struct rgb332_t
@@ -78,4 +87,9 @@ void print_two_pixels(rgb565_t top, rgb565_t bottom) {
   Serial.print(";");
   Serial.print(b_bottom);
   Serial.print("m▀");
+}
+
+
+void reset_color() {
+  Serial.print("\033[0m");
 }

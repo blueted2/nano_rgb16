@@ -14,7 +14,7 @@ ArduCAM myCAM(OV2640, CS);
 
 rgb565_t img_buffer[IMG_WIDTH * IMG_HEIGHT];
 
-#define SERVER "192.168.204.206"
+#define SERVER "192.168.96.206"
 #define PORT 3002
 
 void setup()
@@ -75,9 +75,9 @@ void setup()
     }
   }
 
-  // set_bmp();
+  set_bmp();
 
-  set_jpeg();
+  // set_jpeg();
 }
 
 uint32_t last_change_to_bmp = 0;
@@ -121,26 +121,11 @@ void update_wifi()
 
 void loop()
 {
-
-  while (!Serial.available())
-  {
-    delay(100);
-  }
-
-  while (Serial.available())
-  {
-    Serial.read();
-  }
-
-  capture_jpeg();
-  // delay(1000);
-  return;
-
   // return;
   uint32_t width = IMG_WIDTH;
   uint32_t height = IMG_HEIGHT;
 
-  capture_bmp(img_buffer);
+  uint32_t delta = capture_bmp(img_buffer);
 
   // uint32_t delta = 0;
   // for (int j = 0; j < height; j++)
@@ -161,20 +146,20 @@ void loop()
   //   }
   // }
 
-  // Serial.println(delta);
 
-  // uint16_t now = millis();
+  uint16_t now = millis();
+  Serial.println(delta);
 
-  // if (delta > 50000 && now - last_change_to_bmp > 2000)
-  // {
-  //   Serial.println("---MOUVEMENT---");
-  //   set_jpeg();
-  //   // delay(1000);
+  if (delta > 1000000 && now - last_change_to_bmp > 5000)
+  {
+    Serial.println("---MOUVEMENT---");
+    set_jpeg();
+    delay(500);
 
-  //   capture_jpeg();
-  //   set_bmp();
-  //   // delay(1000);
-  // }
+    capture_jpeg();
+    set_bmp();
+    // delay(1000);
+  }
 
   draw_images();
 }
@@ -183,12 +168,12 @@ void draw_images()
 {
   uint32_t width = IMG_WIDTH;
   uint32_t height = IMG_HEIGHT;
-  for (int y = 0; y < height; y += 2)
+  for (int y = 0; y < height; y += 4)
   {
-    for (int x = 0; x < width; x++)
+    for (int x = 0; x < width; x += 2)
     {
       rgb565_t top = img_buffer[x + y * width];
-      rgb565_t bottom = img_buffer[x + (y + 1) * width];
+      rgb565_t bottom = img_buffer[x + (y + 2) * width];
 
       print_two_pixels(top, bottom);
     }
@@ -234,6 +219,8 @@ void draw_images()
     // }
     Serial.println();
   }
+
+  reset_color();
 }
 
 // TODO: double for loop could be replace with single
@@ -274,7 +261,9 @@ void read_888_as_332(Stream &stream, rgb332_t *buf)
   }
 }
 
-void capture_bmp(rgb565_t *buf)
+
+// returns delta with old and new image
+uint32_t capture_bmp(rgb565_t *buf)
 {
 
   myCAM.flush_fifo();
@@ -297,6 +286,9 @@ void capture_bmp(rgb565_t *buf)
   myCAM.CS_LOW();
   myCAM.set_fifo_burst(); // Set fifo burst mode
 
+
+  uint32_t delta = 0;
+
   for (int y = 0; y < IMG_HEIGHT; y++)
   {
     for (int x = 0; x < IMG_WIDTH; x++)
@@ -306,13 +298,26 @@ void capture_bmp(rgb565_t *buf)
       tmp |= SPI.transfer(0x00);
       // tmp |= SPI.transfer(0x00);
 
-      rgb565_t pixel565 = rgb565_t{tmp};
-      img_buffer[x + y * IMG_WIDTH] = pixel565;
+      rgb565_t new_pixel565 = rgb565_t{tmp};
+
+      rgb565_t old_pixel565 = img_buffer[x + y * IMG_WIDTH];
+
+      // uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
+
+      uint32_t dist = rgb565_t::sq_dist(new_pixel565, old_pixel565);
+
+      // max value of sq_dist for rgb332 is 147 (3 * 7^2)
+      dist = (float(dist) / 147 * 256);
+
+      delta += dist;
+      img_buffer[x + y * IMG_WIDTH] = new_pixel565;
     }
   }
 
   myCAM.CS_HIGH();
   myCAM.clear_fifo_flag();
+
+  return delta;
 }
 
 void capture_jpeg()
@@ -323,16 +328,6 @@ void capture_jpeg()
   // Start capture
   myCAM.start_capture();
 
-  // Serial.print("starting capture");
-
-  // int status = WiFi.status();
-
-  // while (status != WL_CONNECTED)
-  // {
-  //   WiFi.begin("Votre Box Mobile", "Grenier.c.16");
-  //   status = WiFi.status();
-  //   Serial.println("connecting to wifi");
-  // }
 
   update_wifi();
 
@@ -388,7 +383,7 @@ void capture_jpeg()
       if (buf_size == BUF_SIZE)
       {
         int written = client.write(buf, buf_size);
-        delay(20);
+        delay(200);
         Serial.println(written);
         total_sent += buf_size;
         buf_size = 0;
