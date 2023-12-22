@@ -14,7 +14,7 @@ def image_process(image):
     image : np.array
     process image + send alert
     """
-    cv.imwrite('image.png', image)
+    # cv.imwrite('image.png', image)
 
     result = yolov_func(image)
     for obj in result :
@@ -25,8 +25,6 @@ def image_process(image):
             individue = who_it_is(is_green, is_purple)
             prep_message(individue, obj[1], recipients, image)
 
-
-image_process(image)
 
 
 

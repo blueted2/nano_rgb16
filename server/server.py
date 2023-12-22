@@ -77,7 +77,6 @@ def upload():
 
     return "", 200
 
-
 @app.route('/', methods = ["GET"])
 def download():
     if os.path.isfile("img.jpeg"):
