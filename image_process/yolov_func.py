@@ -46,33 +46,11 @@ def yolov_func(input_image:np.array)->list:
     zone_1 = sv.PolygonZone(polygon=ZONE_POLYGON_1, frame_resolution_wh=(image_width,image_height))
     zone_2 = sv.PolygonZone(polygon=ZONE_POLYGON_2, frame_resolution_wh=(image_width,image_height))
     zone_3 = sv.PolygonZone(polygon=ZONE_POLYGON_3, frame_resolution_wh=(image_width,image_height))
-    zone_annotator_1 = sv.PolygonZoneAnnotator(
-                                            zone=zone_1,
-                                            color=sv.Color.red(),
-                                            thickness=2,
-                                            text_scale=2,
-                                            text_thickness=2
-    )
-    zone_annotator_2 = sv.PolygonZoneAnnotator(
-                                            zone=zone_2,
-                                            color=sv.Color.green(),
-                                            thickness=2,
-                                            text_scale=2,
-                                            text_thickness=2
-    )
-    zone_annotator_3 = sv.PolygonZoneAnnotator(
-                                            zone=zone_3,
-                                            color=sv.Color.blue(),
-                                            thickness=2,
-                                            text_scale=2,
-                                            text_thickness=2
-    )
+    
     # Annotate the image with bounding boxes and detection labels
     result = model(input_image, agnostic_nms=True)[0]
     detections = sv.Detections.from_ultralytics(result)
     detections = detections[detections.class_id == 0]  # Filter only people
-
-
 
     labels = [
         f"{model.model.names[class_id]} {confidence:0.2f}"
@@ -80,15 +58,15 @@ def yolov_func(input_image:np.array)->list:
         in zip(detections.confidence, detections.class_id)
     ]
 
-    image = box_annotator.annotate(scene=input_image, detections=detections, labels=labels)
+    # image = box_annotator.annotate(scene=input_image.copy(), detections=detections, labels=labels)
 
     # Detect objects in zones and annotate the image with zone labels
     zone_1.trigger(detections=detections)
     zone_2.trigger(detections=detections)
     zone_3.trigger(detections=detections)
-    image = zone_annotator_1.annotate(scene=image)
-    image = zone_annotator_2.annotate(scene=image)
-    image = zone_annotator_3.annotate(scene=image)
+    # image = zone_annotator_1.annotate(scene=image)
+    # image = zone_annotator_2.annotate(scene=image)
+    # image = zone_annotator_3.annotate(scene=image)
 
 
     # Save the annotated image

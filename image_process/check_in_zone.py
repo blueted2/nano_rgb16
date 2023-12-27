@@ -1,8 +1,8 @@
 import numpy as np
 import cv2 as cv
 
-green_range = ((0, 10, 0), (30, 200, 30))
-purple_range = ((30, 0, 30), (200, 30, 200))
+green_range = ((0, 20, 0), (40, 200, 40))
+purple_range = ((0, 0, 20), (40, 40, 200))
 
 
 def image_as_block(image:np.array, size:int, thr:float, max_count:int=100)->(np.array, int, int, int, int, bool):
@@ -83,7 +83,7 @@ def check_autorization(zone:int, is_green:bool, is_purple:bool)->bool:
 
 
 def who_it_is(is_green:bool, is_purple:bool):
-    print(is_green,is_purple)
+    # print(is_green,is_purple)
     if is_green:
         print("Aurélien")
         return 'Aurélien'
