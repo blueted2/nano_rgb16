@@ -1,8 +1,9 @@
 import numpy as np
 import cv2 as cv
 
-green_range = ((0, 20, 0), (40, 200, 40))
-purple_range = ((0, 0, 20), (40, 40, 200))
+green_range = ((0, 20, 0), (20, 200, 20))
+purple_range = ((20, 0, 20), (200, 30, 200))
+
 
 
 def image_as_block(image:np.array, size:int, thr:float, max_count:int=100)->(np.array, int, int, int, int, bool):
