@@ -9,10 +9,6 @@ cwd = Path(__file__).parent
 goal_dir = cwd.parent
 goal_dir = goal_dir.resolve()
 
-import sys
-
-sys.path.append(str(goal_dir))
-
 from image_process.image_pp import image_process
 
 app = Flask(__name__)

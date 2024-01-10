@@ -1,6 +1,6 @@
-from message_alerte import prep_message
-from yolov_func import yolov_func 
-from check_in_zone import check_in, check_autorization, who_it_is
+from .message_alerte import prep_message
+from .yolov_func import yolov_func 
+from .check_in_zone import check_in, check_autorization, who_it_is
 import cv2 as cv
 
 recipients = ["grenierclemence16@gmail.com" ] # Liste des recepteurs du mail
