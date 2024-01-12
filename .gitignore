@@ -55,3 +55,7 @@ dkms.conf
 node_modules
 .ignore
 c_cpp_properties.json
+__pycache__
+server/models
+server/img.jpeg
+.vscode
