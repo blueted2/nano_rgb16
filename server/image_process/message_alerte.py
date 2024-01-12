@@ -44,11 +44,11 @@ def send_email(subject, body, sender, recipients, password, image:bool=False):
 
     if image : 
         part = MIMEBase('application', "octet-stream")
-        with open("image.jpeg", 'rb') as file:
+        with open("img.jpeg", 'rb') as file:
             part.set_payload(file.read())
         encoders.encode_base64(part)
         part.add_header('Content-Disposition',
-                        'attachment; filename={}'.format(Path("image.jpeg").name))
+                        'attachment; filename={}'.format(Path("img.jpeg").name))
         msg.attach(part)
 
 

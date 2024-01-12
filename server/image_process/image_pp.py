@@ -22,7 +22,7 @@ def image_process(image):
 
         if not flag : 
             individue = who_it_is(is_green, is_purple)
-            prep_message(individue, obj[1], recipients, image)
+            prep_message(individue, obj[1], recipients)
 
 
 
