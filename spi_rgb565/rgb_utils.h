@@ -19,6 +19,14 @@ struct rgb565_t
 
     return r_diff * r_diff + g_diff + g_diff + b_diff * b_diff;
   }
+
+  static rgb565_t from_rgb888(uint8_t r, uint8_t g, uint8_t b) {
+    r = r >> 3;
+    g = g >> 2;
+    b = b >> 3;
+
+    return rgb565_t{(r << 11) | (g << 5) | b};
+  }
 };
 
 struct rgb332_t
@@ -73,6 +81,9 @@ void print_two_pixels(rgb565_t top, rgb565_t bottom) {
   uint8_t g_bottom = bottom.get_g_norm();
   uint8_t b_bottom = bottom.get_b_norm();
 
+  // see https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
+
+  // set the foreground color
   Serial.print("\033[38;2;");
   Serial.print(r_top);
   Serial.print(";");
@@ -80,16 +91,22 @@ void print_two_pixels(rgb565_t top, rgb565_t bottom) {
   Serial.print(";");
   Serial.print(b_top);
   Serial.print("m");
+  
+  // set the background color
   Serial.print("\033[48;2;");
   Serial.print(r_bottom);
   Serial.print(";");
   Serial.print(g_bottom);
   Serial.print(";");
   Serial.print(b_bottom);
-  Serial.print("m▀");
+  Serial.print("m");
+  
+  // U+2580 	▀ 	Upper half block 
+  // -> top half displays with foreground color, bottom half displays with background color
+  Serial.print("▀");
 }
 
-
+// reset colors to default
 void reset_color() {
   Serial.print("\033[0m");
 }

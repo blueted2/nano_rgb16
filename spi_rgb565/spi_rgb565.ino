@@ -3,6 +3,9 @@
 #include <Wire.h>
 
 #include <WiFiNINA.h>
+#include <HttpClient.h>
+
+#include <Arduino_LSM6DS3.h>
 
 #include "rgb_utils.h"
 
@@ -14,18 +17,27 @@ ArduCAM myCAM(OV2640, CS);
 
 rgb565_t img_buffer[IMG_WIDTH * IMG_HEIGHT];
 
-#define SERVER "192.168.96.206"
+#define SERVER "192.168.27.206"
 #define PORT 3002
+
+// #define SERVER_CAPTURE
+#define MOUVEMENT_DETECT
 
 void setup()
 {
   Serial.begin(9600);
+
+  if (!IMU.begin()) {
+    Serial.println("Failed to initialize IMU!");
+    while (1);
+  }
 
   Wire.begin();
 
   pinMode(CS, OUTPUT);
   digitalWrite(CS, HIGH);
 
+#ifndef SERVER_CAPTURE
   // initialize SPI:
   SPI.begin();
 
@@ -76,8 +88,7 @@ void setup()
   }
 
   set_bmp();
-
-  // set_jpeg();
+#endif
 }
 
 uint32_t last_change_to_bmp = 0;
@@ -105,6 +116,7 @@ void set_jpeg()
 
 void update_wifi()
 {
+  // immediately return without printing message if already connected
   if (WiFi.status() == WL_CONNECTED)
     return;
 
@@ -121,35 +133,73 @@ void update_wifi()
 
 void loop()
 {
+
+  // if(checkIntegrity()) {
+  //   Serial.println("=== CAMÉRA DEPLACÉE ===");
+  // }
+
   // return;
   uint32_t width = IMG_WIDTH;
   uint32_t height = IMG_HEIGHT;
 
+#ifdef SERVER_CAPTURE
+
+  char HOST_NAME[] = "192.168.27.206";
+  char PATH_NAME[] = "/capture?format=bmp&width=120&height=100";
+
+  WiFiClient client;
+  HttpClient http = HttpClient(client);
+
+  update_wifi();
+
+  uint32_t delta = 0;
+
+  if (http.get(HOST_NAME, PORT, PATH_NAME) == 0)
+  {
+
+    int err = http.skipResponseHeaders();
+    int bodyLen = http.contentLength();
+
+    char header[54];
+    http.readBytes(header, 54);
+
+    uint32_t width = IMG_WIDTH;
+    uint32_t height = IMG_HEIGHT;
+
+    uint32_t _width = *(uint32_t *)(header + 0x12);
+    int32_t _height = *(int32_t *)(header + 0x16);
+
+    if (width != _width || height != abs(_height))
+    {
+      Serial.println("Wrong image size, aborting!");
+      Serial.println(_width);
+      Serial.println(_height);
+      http.stop();
+      return;
+    }
+
+    delta = read_888_as_565(http, img_buffer, 120 * 100);
+  }
+  else
+  {
+    Serial.println("http error");
+  }
+
+  http.stop();
+
+#else
+  // overwrite last image and return difference with new image (sum of sqaure distances between pixel values)
   uint32_t delta = capture_bmp(img_buffer);
 
-  // uint32_t delta = 0;
-  // for (int j = 0; j < height; j++)
-  // {
-  //   for (int i = 0; i < width; i++)
-  //   {
-  //     rgb332_t pix = rgb332_t{y};
-  //     // rgb332_t old_pix = rgb332_t{old_y};
-
-  //     // uint8_t y_dist_sq = (y - old_y) * (y - old_y) / 256;
-
-  //     uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
-
-  //     // max value of sq_dist for rgb332 is 147 (3 * 7^2)
-  //     y_dist_sq = (float(y_dist_sq) / 147 * 256);
-
-  //     delta += y_dist_sq;
-  //   }
-  // }
-
-
+#endif
   uint16_t now = millis();
   Serial.println(delta);
 
+
+
+
+#ifndef SERVER_CAPTURE
+#ifdef MOUVEMENT_DETECT
   if (delta > 1000000 && now - last_change_to_bmp > 5000)
   {
     Serial.println("---MOUVEMENT---");
@@ -160,107 +210,77 @@ void loop()
     set_bmp();
     // delay(1000);
   }
+  else if (checkIntegrity())
+  {
+    Serial.println("---CAMÉRA DEPLACÉE---");
+    set_jpeg();
+    delay(500);
 
-  draw_images();
+    capture_jpeg();
+    set_bmp();
+    // delay(1000);
+  }
+#endif
+#endif
+
+  draw_image(img_buffer, IMG_WIDTH, IMG_HEIGHT, 1, false);
 }
 
-void draw_images()
+void draw_image(rgb565_t *buf, uint32_t width, uint32_t height, uint32_t step, bool flip)
 {
-  uint32_t width = IMG_WIDTH;
-  uint32_t height = IMG_HEIGHT;
-  for (int y = 0; y < height; y += 4)
+  for (int y = 0; y < height; y += (step * 2))
   {
-    for (int x = 0; x < width; x += 2)
+    for (int x = 0; x < width; x += step)
     {
-      rgb565_t top = img_buffer[x + y * width];
-      rgb565_t bottom = img_buffer[x + (y + 2) * width];
+      rgb565_t top;
+      rgb565_t bottom;
+
+      // jank but whatever
+      if (flip)
+      {
+        top = img_buffer[x + (height - y - 1) * width];
+        bottom = img_buffer[x + (height - y - step - 1) * width];
+      }
+      else
+      {
+        top = img_buffer[x + y * width];
+        bottom = img_buffer[x + (y + step) * width];
+      }
 
       print_two_pixels(top, bottom);
     }
-    // {
-    //   rgb565_t pix = img_buffer[j * width + i];
-
-    //   Serial.print(print_two_pixels(pix.get_r() << 5, pix.get_g() << 5,
-    //                                 pix.get_b() << 6));
-    //   Serial.print(" ");
-    // }
-
-    // for (int i = 0; i < width; i++)
-    // {
-    //   uint8_t y = img_buffer[j * width + i];
-
-    //   rgb565_t pix = rgb332_t{y};
-    //   Serial.print(set_serial_color(pix.get_r_norm(), pix.get_g_norm(),
-    //                                 pix.get_b_norm()));
-    //   Serial.print(" ");
-    // }
-
-    // for (int i = 0; i < width; i++)
-    // {
-    //   uint8_t y = curr_buf[j * width + i];
-    //   uint8_t old_y = prev_buf[j * width + i];
-
-    //   rgb332_t pix = rgb332_t{y};
-    //   rgb332_t old_pix = rgb332_t{old_y};
-
-    //   // uint8_t y_dist_sq = (y - old_y) * (y - old_y) / 256;
-
-    //   uint8_t y_dist_sq = rgb332_t::sq_dist(pix, old_pix);
-
-    //   // max value of sq_dist for rgb332 is 147 (3 * 7^2)
-    //   y_dist_sq = (float(y_dist_sq) / 147 * 256);
-
-    //   if (y_dist_sq > 200)
-    //   {
-    //     Serial.println(y_dist_sq);
-    //   }
-    //   Serial.print(set_serial_color(y_dist_sq, y_dist_sq, y_dist_sq));
-    //   Serial.print(" ");
-    // }
+    reset_color();
     Serial.println();
   }
-
-  reset_color();
 }
 
-// TODO: double for loop could be replace with single
-void read_565_as_332(Stream &stream, rgb332_t *buf)
+uint32_t read_888_as_565(Stream &stream, rgb565_t *buf, uint32_t len)
 {
-  for (int line = 0; line < IMG_HEIGHT; line++)
+  uint32_t delta = 0;
+  for (int x = 0; x < len; x++)
   {
-    for (int x = 0; x < IMG_WIDTH; x++)
-    {
+    uint8_t bgr[3];
 
-      uint8_t pix_buf[2];
-      stream.readBytes(pix_buf, 2);
+    stream.readBytes(bgr, 3);
 
-      rgb565_t pixel = rgb565_t{pix_buf[0] | (pix_buf[1] << 8)};
-      rgb332_t pixel332 = rgb332_t::from_rgb565(pixel);
+    // store previous pixel
+    rgb565_t old_pixel565 = *buf;
 
-      *buf = pixel332;
-      buf++;
-    }
+    // replace
+    *buf = rgb565_t::from_rgb888(bgr[2], bgr[1], bgr[0]);
+
+    uint32_t dist = rgb565_t::sq_dist(*buf, old_pixel565);
+
+    // max value of sq_dist for rgb332 is 147 (3 * 7^2)
+    dist = (float(dist) / 147 * 256);
+
+    delta += dist;
+
+    buf++;
   }
+
+  return delta;
 }
-
-void read_888_as_332(Stream &stream, rgb332_t *buf)
-{
-  for (int line = 0; line < IMG_HEIGHT; line++)
-  {
-    for (int x = 0; x < IMG_WIDTH; x++)
-    {
-      uint8_t bgr[3];
-
-      stream.readBytes(bgr, 3);
-
-      rgb332_t pixel332 = rgb332_t::from_rgb888(bgr[2], bgr[1], bgr[0]);
-
-      *buf = pixel332;
-      buf++;
-    }
-  }
-}
-
 
 // returns delta with old and new image
 uint32_t capture_bmp(rgb565_t *buf)
@@ -285,7 +305,6 @@ uint32_t capture_bmp(rgb565_t *buf)
 
   myCAM.CS_LOW();
   myCAM.set_fifo_burst(); // Set fifo burst mode
-
 
   uint32_t delta = 0;
 
@@ -328,10 +347,7 @@ void capture_jpeg()
   // Start capture
   myCAM.start_capture();
 
-
   update_wifi();
-
-  // HttpClient http(client);
 
   while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK))
   {
@@ -393,7 +409,6 @@ void capture_jpeg()
       // if (length % 100 == 0) {
       //   Serial.println(length);
       // }
-      
     }
     if (buf_size > 0)
     {
@@ -409,82 +424,53 @@ void capture_jpeg()
     myCAM.CS_HIGH();
     myCAM.clear_fifo_flag();
   }
+
   client.flush();
   client.stop();
 }
 
-// void write(WiFiClient client, byte *buffer, int size)
-// {
-//   const int PACKET_SIZE = 1000;
-//   for (int i = 0; i <= size / PACKET_SIZE; ++i)
-//   {
-//     byte *p = buffer + PACKET_SIZE * i;
-//     int l = PACKET_SIZE * (i + 1) > size ? size - PACKET_SIZE * i : PACKET_SIZE;
-//     int bytesWritten = 0;
-//     do
-//     {
-//       bytesWritten += client.write(p + bytesWritten,
-//                                    l - bytesWritten);
-//     } while (bytesWritten < l);
-//   }
-// }
 
-// void jpeg_upload(uint8_t *buffer, uint16_t buffer_len) {
-//     if (client.connect(SERVER, PORT))
-//     {
-//         client.println("POST / HTTP/1.1");
-//         client.print("Host: "); client.println(SERVER);
-//         client.println("User-Agent: Arduino/1.0");
-//         client.println("Connection: close");
-//         client.println("Content-Type: image/jpeg");
-//         client.print("Content-Length: ");
-//         client.println(buffer_len);
-//         client.println();
-//         client.write(buffer, buffer_len);
-//         client.println();
-//     }
-// }
+//La fonction checkIntegrity vérifie que la carte n'a pas été bougé lors de la capture d'images
+//On renvoit true si le mouvement est perçu, sinon false.
+bool checkIntegrity () {
 
-// uint8_t read_fifo_burst(ArduCAM myCAM)
-// {
-//   uint8_t temp = 0, temp_last = 0;
-//   uint32_t length = 0;
-//   length = myCAM.read_fifo_length();
-//   Serial.println(length, DEC);
-//   if (length >= MAX_FIFO_SIZE) //512 kb
-//   {
-//     Serial.println(F("ACK CMD Over size.END"));
-//     return 0;
-//   }
-//   if (length == 0 ) //0 kb
-//   {
-//     Serial.println(F("ACK CMD Size is 0.END"));
-//     return 0;
-//   }
-//   myCAM.CS_LOW();
-//   myCAM.set_fifo_burst();//Set fifo burst mode
-//   temp =  SPI.transfer(0x00);
-//   length --;
-//   while ( length-- )
-//   {
-//     temp_last = temp;
-//     temp =  SPI.transfer(0x00);
-//     if (is_header == true)
-//     {
-//       Serial.write(temp);
-//     }
-//     else if ((temp == 0xD8) & (temp_last == 0xFF))
-//     {
-//       is_header = true;
-//       Serial.println(F("ACK CMD IMG END"));
-//       Serial.write(temp_last);
-//       Serial.write(temp);
-//     }
-//     if ( (temp == 0xD9) && (temp_last == 0xFF) ) //If find the end ,break while,
-//       break;
-//     delayMicroseconds(15);
-//   }
-//   myCAM.CS_HIGH();
-//   is_header = false;
-//   return 1;
-// }
+  //Paramètre des valeurs par défaut:
+  int degreesX = 0;
+  int degreesY = 0;
+  static int degreesXplus = 0;
+  static int degreesYplus =0;
+
+  float x, y, z;
+
+  //On auvre la lecture des données de l'accéléromètres
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(x, y, z);
+  }
+
+  //Conversion en degré (°)
+  x = 100*x;
+  degreesX = x;
+  y = 100*y;
+  degreesY = y;
+
+  // Ici on cherche à vérifié que entre 2 positions précédentes, 
+  // il n'y a pas une distance supérieur à 5° sur les axes X et Y
+
+  //On place la valeur de la première donnée capturé (degreesX ou degreesY)
+  //dans degreesXplus ou degreesYplus si elles valent 0
+  if ((degreesXplus == 0) || (degreesYplus == 0)) {
+    degreesXplus = degreesX;
+    degreesYplus = degreesY;
+  }
+
+  //On vérifit que la différence absolu entre la première mesure d'angle et celle juste après ne dépasse
+  //pas 5°. Cette valeur a été déterminé expérimentalement pour garantir un véritable mouvement volontaire.
+  //On remet alors les valeurs degreesXplus et degreesYplus à 0 pour éviter l'envoi répété de notification 
+  //si la carte reste en position "dégradé".
+  if ((abs(degreesXplus - degreesX) >= 5) || (abs(degreesYplus - degreesY) >= 5)) {
+    degreesXplus = 0;
+    degreesYplus = 0;
+    return true;
+  }
+  return false;
+}
